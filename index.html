@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Home-Plan Prototype</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="toolbar">
+        <h1>Home-Plan</h1>
+        <button id="tool-wall" class="active">Стена</button>
+        <button id="delete-selected">Удалить выбранную</button>
+      </aside>
+
+      <main class="workspace">
+        <svg id="canvas" viewBox="0 0 2000 1200" preserveAspectRatio="xMidYMid meet"></svg>
+      </main>
+
+      <aside class="inspector">
+        <h2>Инспектор</h2>
+
+        <section>
+          <h3>Сетка</h3>
+          <label>Единицы
+            <select id="grid-unit">
+              <option value="cm" selected>см</option>
+              <option value="mm">мм</option>
+              <option value="inch">дюймы</option>
+              <option value="m">м</option>
+            </select>
+          </label>
+          <label>Шаг
+            <input id="grid-step" type="number" min="1" value="10" />
+          </label>
+          <label>Пикселей на шаг
+            <input id="grid-px" type="number" min="5" value="40" />
+          </label>
+        </section>
+
+        <section>
+          <h3>Выбранная стена</h3>
+          <label>Ограничение
+            <select id="wall-lock">
+              <option value="none" selected>Нет</option>
+              <option value="horizontal">Горизонталь</option>
+              <option value="vertical">Вертикаль</option>
+            </select>
+          </label>
+          <label>Толщина
+            <input id="wall-thickness" type="number" min="0" step="1" value="20" />
+          </label>
+          <label>Расположение толщины
+            <select id="wall-side">
+              <option value="center" selected>От центра</option>
+              <option value="left">Слева</option>
+              <option value="right">Справа</option>
+            </select>
+          </label>
+        </section>
+      </aside>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
