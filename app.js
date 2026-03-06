@@ -135,7 +135,85 @@ function wallDirection(wall) {
   return { dx: dx / len, dy: dy / len };
 }
 
-function wallPolygonPoints(wall) {
+function lineIntersection(p1, d1, p2, d2) {
+  const cross = d1.x * d2.y - d1.y * d2.x;
+  if (Math.abs(cross) < 1e-9) return null;
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const t = (dx * d2.y - dy * d2.x) / cross;
+  const u = (dx * d1.y - dy * d1.x) / cross;
+  return { x: p1.x + d1.x * t, y: p1.y + d1.y * t, t, u };
+}
+
+function endpointRay(endpoint) {
+  const wall = getWall(endpoint.wallId);
+  const a = getNode(wall.startNodeId);
+  const b = getNode(wall.endNodeId);
+  if (!a || !b) return null;
+
+  const dir = wallDirection(wall);
+  const right = { x: dir.dy, y: -dir.dx };
+  const t = Math.max(0, Number(wall.thickness) || 0);
+
+  const node = endpoint.at === 'start' ? a : b;
+  const away = endpoint.at === 'start' ? { x: dir.dx, y: dir.dy } : { x: -dir.dx, y: -dir.dy };
+  const base = { x: node.x + right.x * t, y: node.y + right.y * t };
+
+  return { base, away, thickness: t };
+}
+
+function computeJoinRightPoints() {
+  const joins = new Map();
+
+  state.nodes.forEach(node => {
+    const endpoints = [];
+    state.walls.forEach(w => {
+      if (w.startNodeId === node.id) endpoints.push({ wallId: w.id, at: 'start' });
+      if (w.endNodeId === node.id) endpoints.push({ wallId: w.id, at: 'end' });
+    });
+
+    if (!endpoints.length) return;
+
+    const rays = endpoints.map(ep => {
+      const ray = endpointRay(ep);
+      if (!ray) return null;
+      return {
+        ...ep,
+        ...ray,
+        angle: Math.atan2(ray.away.y, ray.away.x)
+      };
+    }).filter(Boolean);
+
+    if (rays.length < 2) {
+      rays.forEach(r => joins.set(`${r.wallId}:${r.at}`, r.base));
+      return;
+    }
+
+    rays.sort((r1, r2) => r1.angle - r2.angle);
+
+    // For each adjacent pair, intersect right-offset rays. This trims/extents ends to build a single joint shape.
+    for (let i = 0; i < rays.length; i += 1) {
+      const cur = rays[i];
+      const next = rays[(i + 1) % rays.length];
+      const hit = lineIntersection(cur.base, cur.away, next.base, next.away);
+
+      if (hit && hit.t >= -1e-6 && hit.u >= -1e-6) {
+        joins.set(`${cur.wallId}:${cur.at}`, { x: hit.x, y: hit.y });
+        joins.set(`${next.wallId}:${next.at}`, { x: hit.x, y: hit.y });
+      }
+    }
+
+    // fallback for unresolved endpoints
+    rays.forEach(r => {
+      const key = `${r.wallId}:${r.at}`;
+      if (!joins.has(key)) joins.set(key, r.base);
+    });
+  });
+
+  return joins;
+}
+
+function wallPolygonPoints(wall, joins) {
   const a = getNode(wall.startNodeId);
   const b = getNode(wall.endNodeId);
   if (!a || !b) return '';
@@ -143,15 +221,17 @@ function wallPolygonPoints(wall) {
   const t = Math.max(0, Number(wall.thickness) || 0);
   if (t === 0) return `${a.x},${a.y} ${b.x},${b.y}`;
 
-  // Всегда вправо относительно направления start->end, без удлинения вдоль линии
   const dir = wallDirection(wall);
   const rx = dir.dy;
   const ry = -dir.dx;
 
+  const aRight = joins.get(`${wall.id}:start`) || { x: a.x + rx * t, y: a.y + ry * t };
+  const bRight = joins.get(`${wall.id}:end`) || { x: b.x + rx * t, y: b.y + ry * t };
+
   const p1 = { x: a.x, y: a.y };
   const p2 = { x: b.x, y: b.y };
-  const p3 = { x: b.x + rx * t, y: b.y + ry * t };
-  const p4 = { x: a.x + rx * t, y: a.y + ry * t };
+  const p3 = { x: bRight.x, y: bRight.y };
+  const p4 = { x: aRight.x, y: aRight.y };
 
   return `${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y}`;
 }
@@ -199,6 +279,7 @@ function selectEntity(entity) {
 
 function renderWalls() {
   const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  const joins = computeJoinRightPoints();
 
   state.walls.forEach(w => {
     const a = getNode(w.startNodeId);
@@ -207,7 +288,7 @@ function renderWalls() {
 
     const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
     poly.setAttribute('class', 'wall-shape');
-    poly.setAttribute('points', wallPolygonPoints(w));
+    poly.setAttribute('points', wallPolygonPoints(w, joins));
     group.appendChild(poly);
 
     const center = document.createElementNS('http://www.w3.org/2000/svg', 'line');
