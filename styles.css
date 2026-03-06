@@ -17,8 +17,9 @@ h2, h3 { margin: 8px 0; }
 .grid-major { stroke: #e7e7e7; stroke-width: 0.5; }
 .grid-minor { stroke: #f3f3f3; stroke-width: 0.5; }
 .wall-hit { stroke: transparent; stroke-width: 2; cursor: move; }
-.wall-shape { fill: #bfbfbf; stroke: none; }
+.wall-shape { stroke: none; }
 .wall-center { stroke: #333; stroke-width: 0.1; stroke-dasharray: 0.8 0.6; opacity: 0.65; }
+.wall-length { font-size: 4px; fill: #4a4a4a; paint-order: stroke; stroke: #fff; stroke-width: 0.6px; }
 .endpoint { fill: #fff; stroke: #2d6cdf; stroke-width: 0.12; cursor: grab; }
 .endpoint.selected { fill: #2d6cdf; }
 .wall-center.selected { stroke: #2d6cdf; stroke-width: 0.2; }

@@ -12,6 +12,7 @@ const ui = {
   wallName: document.getElementById('wall-name'),
   wallLock: document.getElementById('wall-lock'),
   wallThickness: document.getElementById('wall-thickness'),
+  wallColor: document.getElementById('wall-color'),
   deleteSelected: document.getElementById('delete-selected'),
   nodeWallList: document.getElementById('node-wall-list')
 };
@@ -68,6 +69,43 @@ function snapPoint(p) {
 
 function getNode(nodeId) { return state.nodes.find(n => n.id === nodeId); }
 function getWall(wallId) { return state.walls.find(w => w.id === wallId); }
+
+function wallsAtNode(nodeId) {
+  return state.walls.filter(w => w.startNodeId === nodeId || w.endNodeId === nodeId);
+}
+
+function wallComponent(wallId) {
+  const first = getWall(wallId);
+  if (!first) return [];
+
+  const wallQueue = [first.id];
+  const seenWalls = new Set();
+  const seenNodes = new Set();
+
+  while (wallQueue.length) {
+    const wid = wallQueue.pop();
+    if (seenWalls.has(wid)) continue;
+    seenWalls.add(wid);
+    const w = getWall(wid);
+    if (!w) continue;
+
+    [w.startNodeId, w.endNodeId].forEach(nid => {
+      if (seenNodes.has(nid)) return;
+      seenNodes.add(nid);
+      wallsAtNode(nid).forEach(nw => {
+        if (!seenWalls.has(nw.id)) wallQueue.push(nw.id);
+      });
+    });
+  }
+
+  return state.walls.filter(w => seenWalls.has(w.id));
+}
+
+function componentColor(wallId) {
+  const component = wallComponent(wallId);
+  if (!component.length) return '#bfbfbf';
+  return component[0].color || '#bfbfbf';
+}
 
 function createNode(p) {
   const node = { id: id('node'), x: p.x, y: p.y };
@@ -191,22 +229,22 @@ function computeJoinRightPoints() {
 
     rays.sort((r1, r2) => r1.angle - r2.angle);
 
-    // For each adjacent pair, intersect right-offset rays. This trims/extents ends to build a single joint shape.
-    for (let i = 0; i < rays.length; i += 1) {
-      const cur = rays[i];
+    // Compute intersections with both neighbors around the node.
+    rays.forEach((ray, i) => {
+      const prev = rays[(i - 1 + rays.length) % rays.length];
       const next = rays[(i + 1) % rays.length];
-      const hit = lineIntersection(cur.base, cur.away, next.base, next.away);
+      const prevHit = lineIntersection(ray.base, ray.away, prev.base, prev.away);
+      const nextHit = lineIntersection(ray.base, ray.away, next.base, next.away);
 
-      if (hit && hit.t >= -1e-6 && hit.u >= -1e-6) {
-        joins.set(`${cur.wallId}:${cur.at}`, { x: hit.x, y: hit.y });
-        joins.set(`${next.wallId}:${next.at}`, { x: hit.x, y: hit.y });
-      }
-    }
+      const validPrev = prevHit && prevHit.t >= -1e-6 && prevHit.u >= -1e-6;
+      const validNext = nextHit && nextHit.t >= -1e-6 && nextHit.u >= -1e-6;
 
-    // fallback for unresolved endpoints
-    rays.forEach(r => {
-      const key = `${r.wallId}:${r.at}`;
-      if (!joins.has(key)) joins.set(key, r.base);
+      // For polygon a->b->bRight->aRight, end uses next side, start uses prev side.
+      let pick = null;
+      if (ray.at === 'start') pick = validPrev ? prevHit : (validNext ? nextHit : null);
+      else pick = validNext ? nextHit : (validPrev ? prevHit : null);
+
+      joins.set(`${ray.wallId}:${ray.at}`, pick ? { x: pick.x, y: pick.y } : ray.base);
     });
   });
 
@@ -289,6 +327,7 @@ function renderWalls() {
     const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
     poly.setAttribute('class', 'wall-shape');
     poly.setAttribute('points', wallPolygonPoints(w, joins));
+    poly.setAttribute('fill', componentColor(w.id));
     group.appendChild(poly);
 
     const center = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -296,6 +335,17 @@ function renderWalls() {
     center.setAttribute('x2', b.x); center.setAttribute('y2', b.y);
     center.setAttribute('class', `wall-center ${state.selected?.type === 'wall' && state.selected.id === w.id ? 'selected' : ''}`);
     group.appendChild(center);
+
+    const len = distance(a, b);
+    const tx = (a.x + b.x) / 2;
+    const ty = (a.y + b.y) / 2;
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', tx);
+    label.setAttribute('y', ty - state.grid.step * 0.2);
+    label.setAttribute('class', 'wall-length');
+    label.setAttribute('text-anchor', 'middle');
+    label.textContent = `${len.toFixed(1)} ${unitLabel()}`;
+    group.appendChild(label);
 
     const hit = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     hit.setAttribute('x1', a.x); hit.setAttribute('y1', a.y);
@@ -387,6 +437,7 @@ function refreshInspector() {
     ui.wallName.value = wall.name;
     ui.wallLock.value = wall.lock;
     ui.wallThickness.value = wall.thickness;
+    ui.wallColor.value = componentColor(wall.id);
     return;
   }
 
@@ -396,7 +447,12 @@ function refreshInspector() {
     ui.selectionTitle.textContent = 'Свойства точки';
     ui.nodeFields.classList.remove('hidden');
     const walls = state.walls.filter(w => w.startNodeId === node.id || w.endNodeId === node.id);
-    ui.nodeWallList.innerHTML = walls.map(w => `<li>${w.name} — толщина ${w.thickness} ${unitLabel()}, ограничение: ${w.lock}</li>`).join('');
+    ui.nodeWallList.innerHTML = walls.map(w => {
+      const a = getNode(w.startNodeId);
+      const b = getNode(w.endNodeId);
+      const len = a && b ? distance(a, b).toFixed(1) : '-';
+      return `<li>${w.name} — длина ${len} ${unitLabel()}, толщина ${w.thickness} ${unitLabel()}, ограничение: ${w.lock}</li>`;
+    }).join('');
   }
 }
 
@@ -409,7 +465,8 @@ function finalizeWall(startPoint, endPoint) {
     startNodeId: findOrCreateNode(startPoint).id,
     endNodeId: findOrCreateNode(endPoint).id,
     lock: 'none',
-    thickness: 20
+    thickness: 20,
+    color: '#bfbfbf'
   };
   state.walls.push(wall);
   selectEntity({ type: 'wall', id: wall.id });
@@ -559,6 +616,15 @@ ui.wallThickness.addEventListener('change', () => {
   if (!wall) return;
   wall.thickness = Math.max(0, Number(ui.wallThickness.value) || 0);
   refreshInspector();
+  render();
+});
+
+ui.wallColor.addEventListener('input', () => {
+  if (state.selected?.type !== 'wall') return;
+  const wall = getWall(state.selected.id);
+  if (!wall) return;
+  const color = ui.wallColor.value || '#bfbfbf';
+  wallComponent(wall.id).forEach(w => { w.color = color; });
   render();
 });
 
