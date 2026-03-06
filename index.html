@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Home Plan Prototype 2</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="tools">
+      <button id="tool-select" class="tool active" title="Выбрать">↖</button>
+      <button id="tool-wall" class="tool" title="Стена">▭</button>
+    </div>
+    <div class="settings">
+      <label>Сетка (см)
+        <input id="grid-step" type="number" min="1" step="1" value="10" />
+      </label>
+      <label>Толщина стены (см)
+        <input id="wall-thickness" type="number" min="1" step="1" value="20" />
+      </label>
+    </div>
+  </header>
+  <main class="stage">
+    <svg id="canvas"></svg>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
