@@ -227,22 +227,37 @@ function computeJoinRightPoints() {
       return;
     }
 
+    // Most important practical case: a chain corner (2 walls in one node).
+    // Force a single shared join vertex from infinite right-offset lines.
+    if (rays.length === 2) {
+      const a = rays[0];
+      const b = rays[1];
+      let hit = lineIntersection(a.base, a.away, b.base, b.away);
+      if (!hit) {
+        // fallback with opposite direction (parallel robustness)
+        hit = lineIntersection(a.base, a.away, b.base, { x: -b.away.x, y: -b.away.y });
+      }
+      const join = hit ? { x: hit.x, y: hit.y } : {
+        x: (a.base.x + b.base.x) / 2,
+        y: (a.base.y + b.base.y) / 2
+      };
+      joins.set(`${a.wallId}:${a.at}`, join);
+      joins.set(`${b.wallId}:${b.at}`, join);
+      return;
+    }
+
     rays.sort((r1, r2) => r1.angle - r2.angle);
 
-    // Compute intersections with both neighbors around the node.
+    // For 3+ walls use local neighbor intersections.
     rays.forEach((ray, i) => {
       const prev = rays[(i - 1 + rays.length) % rays.length];
       const next = rays[(i + 1) % rays.length];
       const prevHit = lineIntersection(ray.base, ray.away, prev.base, prev.away);
       const nextHit = lineIntersection(ray.base, ray.away, next.base, next.away);
 
-      const validPrev = prevHit && prevHit.t >= -1e-6 && prevHit.u >= -1e-6;
-      const validNext = nextHit && nextHit.t >= -1e-6 && nextHit.u >= -1e-6;
-
-      // For polygon a->b->bRight->aRight, end uses next side, start uses prev side.
       let pick = null;
-      if (ray.at === 'start') pick = validPrev ? prevHit : (validNext ? nextHit : null);
-      else pick = validNext ? nextHit : (validPrev ? prevHit : null);
+      if (ray.at === 'start') pick = prevHit || nextHit;
+      else pick = nextHit || prevHit;
 
       joins.set(`${ray.wallId}:${ray.at}`, pick ? { x: pick.x, y: pick.y } : ray.base);
     });
