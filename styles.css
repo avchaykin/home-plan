@@ -22,4 +22,6 @@ h2, h3 { margin: 8px 0; }
 .wall-length { font-size: 4px; fill: #4a4a4a; paint-order: stroke; stroke: #fff; stroke-width: 0.6px; }
 .endpoint { fill: #fff; stroke: #2d6cdf; stroke-width: 0.12; cursor: grab; }
 .endpoint.selected { fill: #2d6cdf; }
+.wall-corner { fill: #fff; stroke: #c23b22; stroke-width: 0.12; cursor: grab; }
+.wall-corner.selected { fill: #c23b22; }
 .wall-center.selected { stroke: #2d6cdf; stroke-width: 0.2; }

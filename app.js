@@ -145,6 +145,43 @@ function moveNode(nodeId, p) {
   applyNodeConstraints(nodeId);
 }
 
+function moveWallByCorner(wallId, cornerIndex, targetPoint) {
+  const wall = getWall(wallId);
+  if (!wall) return;
+  const a = getNode(wall.startNodeId);
+  const b = getNode(wall.endNodeId);
+  if (!a || !b) return;
+
+  const corners = wallBaseCorners(wall);
+  if (!corners) return;
+  const current = corners[cornerIndex];
+  const dx = targetPoint.x - current.x;
+  const dy = targetPoint.y - current.y;
+
+  // corners 0/3 control start edge, 1/2 control end edge
+  if (cornerIndex === 0 || cornerIndex === 3) {
+    a.x += dx; a.y += dy;
+    applyNodeConstraints(a.id);
+  } else {
+    b.x += dx; b.y += dy;
+    applyNodeConstraints(b.id);
+  }
+}
+
+function snapWallCornerToOtherCorner(wallId, cornerIndex) {
+  const wall = getWall(wallId);
+  if (!wall) return;
+  const corners = wallBaseCorners(wall);
+  if (!corners) return;
+  const cur = corners[cornerIndex];
+
+  const candidates = allWallCorners().filter(c => !(c.wallId === wallId && c.cornerIndex === cornerIndex));
+  const hit = candidates.find(c => distance(c, cur) <= state.grid.step * 0.35);
+  if (!hit) return;
+
+  moveWallByCorner(wallId, cornerIndex, { x: hit.x, y: hit.y });
+}
+
 function mergeNodes(sourceId, targetId) {
   if (sourceId === targetId) return;
   state.walls.forEach(w => {
@@ -266,25 +303,39 @@ function computeJoinRightPoints() {
   return joins;
 }
 
-function wallPolygonPoints(wall, joins) {
+function wallBaseCorners(wall) {
   const a = getNode(wall.startNodeId);
   const b = getNode(wall.endNodeId);
-  if (!a || !b) return '';
-
+  if (!a || !b) return null;
   const t = Math.max(0, Number(wall.thickness) || 0);
-  if (t === 0) return `${a.x},${a.y} ${b.x},${b.y}`;
-
   const dir = wallDirection(wall);
   const rx = dir.dy;
   const ry = -dir.dx;
+  return [
+    { x: a.x, y: a.y },
+    { x: b.x, y: b.y },
+    { x: b.x + rx * t, y: b.y + ry * t },
+    { x: a.x + rx * t, y: a.y + ry * t }
+  ];
+}
 
-  const aRight = joins.get(`${wall.id}:start`) || { x: a.x + rx * t, y: a.y + ry * t };
-  const bRight = joins.get(`${wall.id}:end`) || { x: b.x + rx * t, y: b.y + ry * t };
+function allWallCorners() {
+  const out = [];
+  state.walls.forEach(w => {
+    const corners = wallBaseCorners(w);
+    if (!corners) return;
+    corners.forEach((p, idx) => out.push({ wallId: w.id, cornerIndex: idx, x: p.x, y: p.y }));
+  });
+  return out;
+}
 
-  const p1 = { x: a.x, y: a.y };
-  const p2 = { x: b.x, y: b.y };
-  const p3 = { x: bRight.x, y: bRight.y };
-  const p4 = { x: aRight.x, y: aRight.y };
+function wallPolygonPoints(wall, joins) {
+  const corners = wallBaseCorners(wall);
+  if (!corners) return '';
+
+  const [p1, p2, p3Base, p4Base] = corners;
+  const p3 = joins.get(`${wall.id}:end`) || p3Base;
+  const p4 = joins.get(`${wall.id}:start`) || p4Base;
 
   return `${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y}`;
 }
@@ -404,6 +455,28 @@ function renderEndpoints() {
     });
     g.appendChild(c);
   });
+
+  if (state.selected?.type === 'wall') {
+    const wall = getWall(state.selected.id);
+    const corners = wall ? wallBaseCorners(wall) : null;
+    if (corners) {
+      corners.forEach((p, idx) => {
+        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        c.setAttribute('cx', p.x);
+        c.setAttribute('cy', p.y);
+        c.setAttribute('r', state.grid.step * 0.14);
+        c.setAttribute('class', 'wall-corner selected');
+        c.addEventListener('pointerdown', evt => {
+          evt.stopPropagation();
+          if (state.tool !== 'select') return;
+          state.drag = { type: 'wall-corner', wallId: wall.id, cornerIndex: idx };
+          svg.setPointerCapture(evt.pointerId);
+        });
+        g.appendChild(c);
+      });
+    }
+  }
+
   svg.appendChild(g);
 }
 
@@ -556,6 +629,12 @@ svg.addEventListener('pointermove', evt => {
     return;
   }
 
+  if (state.drag.type === 'wall-corner') {
+    moveWallByCorner(state.drag.wallId, state.drag.cornerIndex, p);
+    render();
+    return;
+  }
+
   if (state.drag.type === 'pan') {
     const cur = screenToWorld(evt.clientX, evt.clientY);
     state.camera.x = state.drag.cam0.x + (state.drag.origin.x - cur.x);
@@ -566,6 +645,9 @@ svg.addEventListener('pointermove', evt => {
 
 svg.addEventListener('pointerup', evt => {
   if (state.drag?.type === 'node') tryMergeNode(state.drag.nodeId);
+  if (state.drag?.type === 'wall-corner') {
+    snapWallCornerToOtherCorner(state.drag.wallId, state.drag.cornerIndex);
+  }
   if (svg.hasPointerCapture(evt.pointerId)) svg.releasePointerCapture(evt.pointerId);
   state.drag = null;
   refreshInspector();
